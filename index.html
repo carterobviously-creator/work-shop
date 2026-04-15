@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BUILD MASTER: SPIN EDITION</title>
+    <title>BUILD MASTER: AUDIO EDITION</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; color: #00ff00; }
         #crosshair {
@@ -35,14 +35,24 @@
             margin-top: 30px; padding: 15px 40px; background: #00ff00; color: black;
             border: none; border-radius: 4px; font-size: 1.2rem; font-weight: bold; cursor: pointer;
         }
+        #radio-control {
+            position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.7);
+            padding: 10px 15px; border-radius: 4px; border: 1px solid #444;
+            color: #00ff00; font-size: 12px; pointer-events: auto; z-index: 5;
+        }
     </style>
 </head>
 <body>
 
     <div id="crosshair"></div>
 
+    <div id="radio-control">
+        📻 RADIO: <span id="radio-status">OFF</span><br>
+        <span style="font-size: 10px; color: #888;">[M] TO MUTE</span>
+    </div>
+
     <div id="hud">
-        <div style="font-size: 1.4rem; font-weight: bold; color: #fff; margin-bottom: 5px;">BUILD MASTER: SPINNER</div>
+        <div style="font-size: 1.4rem; font-weight: bold; color: #fff; margin-bottom: 5px;">BUILD MASTER: AUDIO</div>
         STRUCTURES: <span id="part-count">0</span><br>
         <div id="target-info" style="color: #00ff00; margin-top: 10px; display: none;">
             TARGET: <span id="target-name">None</span><br>
@@ -59,17 +69,21 @@
 
     <div id="start-screen" onclick="requestStart()">
         <div style="padding: 50px; border: 2px solid #00ff00; border-radius: 20px; background: #050505; max-width: 600px;">
-            <h1 style={{ color: '#00ff00', fontSize: '3rem' }}>SPIN MASTER</h1>
-            <p style="color: #888;">BUILD ROTATING HOUSES & MACHINES</p>
+            <h1 style="color: #00ff00; font-size: 3rem; margin: 0;">AUDIO MASTER</h1>
+            <p style="color: #888;">BUILDING TO THE BEAT</p>
             <div style="text-align: left; background: #111; padding: 25px; border-radius: 10px; margin-top: 30px; border: 1px solid #222;">
-                <p>🌀 <b>SPINNING</b>: Look at a part and press <b>R</b> to make it rotate.</p>
-                <p>🏗️ <b>WELDING</b>: Drop parts onto other parts to make them spin together.</p>
-                <p>📦 <b>CATALOG</b>: Press <b>TAB</b> to spawn heavy materials.</p>
-                <p>🔨 <b>CONTROLS</b>: WASD to Move | E to Grab | Shift to Sprint.</p>
+                <p>🎵 <b>WORKSHOP RADIO</b>: Music starts when you enter the shop.</p>
+                <p>🌀 <b>SPINNING</b>: Look at a part and press <b>R</b> to rotate.</p>
+                <p>🏗️ <b>WELDING</b>: Drop parts onto others to spin them together.</p>
+                <p>📦 <b>CATALOG</b>: Press <b>TAB</b> to spawn materials.</p>
             </div>
             <button class="btn">INITIALIZE MOTORS</button>
         </div>
     </div>
+
+    <audio id="bg-music" loop crossOrigin="anonymous">
+        <source src="https://storage.googleapis.com/producer-app-public/clips/b0f4d4b5-5e0b-4424-883e-2a66db8693ad.m4a" type="audio/mp4">
+    </audio>
 
     <script type="importmap">
         {
@@ -85,6 +99,7 @@
         let isLocked = false, showMenu = false, partCount = 0;
         const keys = {}, pickables = [];
         let heldObj = null, activeGamepadIndex = null;
+        const audio = document.getElementById('bg-music');
 
         const PART_LIBRARY = [
             { name: 'Core Foundation', geo: new THREE.BoxGeometry(2, 0.4, 2), color: 0x444444 },
@@ -96,7 +111,6 @@
             { name: 'Roof Plate', geo: new THREE.BoxGeometry(2.5, 0.1, 2.5), color: 0x440000 }
         ];
 
-        // --- SCENE ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x101010);
         scene.fog = new THREE.Fog(0x101010, 10, 150);
@@ -120,7 +134,6 @@
         floor.receiveShadow = true;
         scene.add(floor);
 
-        // --- BUILD HUB ---
         const buildHub = new THREE.Group();
         buildHub.position.set(0, 0, -20);
         scene.add(buildHub);
@@ -130,7 +143,6 @@
         bZone.position.y = 0.02;
         buildHub.add(bZone);
 
-        // --- DRILL VIEWMODEL ---
         const drillVM = new THREE.Group();
         const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.25, 0.2), new THREE.MeshStandardMaterial({ color: 0x222222 }));
         drillVM.add(body);
@@ -139,7 +151,6 @@
         drillVM.add(bit);
         scene.add(drillVM);
 
-        // --- MECHANICS ---
         window.spawnPart = (part) => {
             const m = new THREE.Mesh(part.geo, new THREE.MeshStandardMaterial({ color: part.color }));
             m.position.set((Math.random()-0.5)*15, 10, -20);
@@ -155,32 +166,24 @@
 
         function handleInteraction() {
             if (heldObj) {
-                // Check what we are dropping onto
                 raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
                 const hits = raycaster.intersectObjects([floor, ...pickables]);
                 const validHit = hits.find(h => h.object !== heldObj);
-
                 if (validHit && validHit.distance < 12) {
                     const target = validHit.object;
                     const worldPos = new THREE.Vector3(); heldObj.getWorldPosition(worldPos);
-                    
                     if (target === floor) {
                         scene.attach(heldObj);
                         heldObj.position.set(Math.round(worldPos.x/0.5)*0.5, Math.max(0.1, worldPos.y), Math.round(worldPos.z/0.5)*0.5);
                     } else {
-                        // WELD TO PART
                         target.attach(heldObj);
-                        // Local snapping
                         heldObj.position.set(Math.round(heldObj.position.x/0.2)*0.2, Math.round(heldObj.position.y/0.2)*0.2, Math.round(heldObj.position.z/0.2)*0.2);
                     }
                     heldObj.rotation.set(0, 0, 0);
                     partCount++;
                     document.getElementById('part-count').innerText = partCount;
                     heldObj = null;
-                } else {
-                    scene.attach(heldObj);
-                    heldObj = null;
-                }
+                } else { scene.attach(heldObj); heldObj = null; }
             } else {
                 raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
                 const hits = raycaster.intersectObjects(pickables);
@@ -202,8 +205,13 @@
             }
         }
 
-        // --- INPUTS ---
-        window.requestStart = () => renderer.domElement.requestPointerLock();
+        window.requestStart = () => {
+            renderer.domElement.requestPointerLock();
+            if (audio.paused) {
+                audio.play();
+                document.getElementById('radio-status').innerText = "PLAYING: Build Beats";
+            }
+        };
         window.closeMenu = () => {
             showMenu = false; document.getElementById('catalog').style.display = 'none';
             renderer.domElement.requestPointerLock();
@@ -223,6 +231,10 @@
             }
             if (e.code === 'KeyE' && isLocked) handleInteraction();
             if (e.code === 'KeyR' && isLocked) toggleSpin();
+            if (e.code === 'KeyM') {
+                audio.muted = !audio.muted;
+                document.getElementById('radio-status').innerText = audio.muted ? "MUTED" : "PLAYING";
+            }
         });
         window.addEventListener('keyup', e => keys[e.code] = false);
 
@@ -245,7 +257,6 @@
             list.appendChild(el);
         });
 
-        // --- LOOP ---
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now();
@@ -297,7 +308,6 @@
                 }
             }
 
-            // ROTATION ENGINE
             pickables.forEach(p => {
                 if (p.userData.isSpinning) {
                     p.rotateY(p.userData.rotSpeed);
